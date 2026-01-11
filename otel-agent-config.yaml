@@ -8,59 +8,52 @@ receivers:
 
 processors:
   batch:
-    timeout: 1s
-    send_batch_size: 1024
+    timeout: 100ms # Send fast
+    send_batch_size: 512
 
-  # Enforce enviroment tagging if missing
+  # Resource Enrichment (Simulating K8s Node)
   resource:
     attributes:
+      - key: k8s.node.name
+        value: "simulated-node-1"
+        action: upsert
       - key: deployment.environment
         value: "local-dev"
         action: upsert
 
-  # Data scrubbing example (Security requirement)
+  # Data scrubbing (Security requirement - Shift Left)
+  # Scrubbing at the agent prevents PII from ever leaving the node
   transform:
     error_mode: ignore
     trace_statements:
       - context: span
         statements:
-          # Redact email addresses from span attributes
           - replace_pattern(attributes["user.email"], ".*", "*****") where attributes["user.email"] != nil
 
 exporters:
-  # Metrics -> Prometheus
-  prometheus:
-    endpoint: "0.0.0.0:8889"
-    namespace: "default"
-
-  # Traces -> Tempo
-  otlp/tempo:
-    endpoint: "tempo:4317"
-    tls:
-      insecure: true
-
-  # Logs -> Loki
-  otlp/loki:
-    endpoint: "loki:3100"
+  # Forward to Gateway (Load Balanced in real K8s)
+  otlp/gateway:
+    endpoint: "otel-gateway:4317"
     tls:
       insecure: true
 
   debug:
-    verbosity: detailed
+    verbosity: normal
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [resource, transform, batch]
-      exporters: [otlp/tempo, debug]
+      exporters: [otlp/gateway]
     
     metrics:
       receivers: [otlp]
       processors: [resource, batch]
-      exporters: [prometheus, debug]
+      exporters: [otlp/gateway]
 
     logs:
       receivers: [otlp]
       processors: [resource, batch]
-      exporters: [otlp/loki, debug]
+      # Logs often go directly to backend in some archs, but for uniformity we send to Gateway
+      exporters: [otlp/gateway]

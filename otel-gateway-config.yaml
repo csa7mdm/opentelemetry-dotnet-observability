@@ -1,0 +1,86 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+  # Resource enrichment is done at Agent, but we keep this for aggregation identity if needed
+  # In this arch, Gateway trusts Agent's tags.
+  
+  # -----------------------------------------------------------------------
+  # TAIL SAMPLING POLICY (The "Golden Standard" logic)
+  # -----------------------------------------------------------------------
+  tail_sampling:
+    decision_wait: 10s # Wait 10s for all spans of a trace to arrive
+    num_traces: 100000 # Memory buffer size
+    expected_new_traces_per_sec: 100
+    policies:
+      [
+        # 1. Always Keep Errors (Golden Signal: Errors)
+        {
+          name: keep-errors,
+          type: status_code,
+          status_code: {status_codes: [ERROR]}
+        },
+        # 2. Key LatencyThreshold (>1000ms) (Golden Signal: Latency)
+        {
+          name: keep-slow-requests,
+          type: latency,
+          latency: {threshold_ms: 1000}
+        },
+        # 3. Probabilistic Head Sampling (Golden Signal: Traffic - Representative Sample)
+        # Keep 1% of the "boring" successful traffic for trending
+        {
+          name: probabilistic-1-percent,
+          type: probabilistic,
+          probabilistic: {sampling_percentage: 1.0}
+        }
+      ]
+
+exporters:
+  # Metrics -> Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: "default"
+    # SRE Tip: Enable 'resource_to_telemetry_conversion' to keep meaningful tags
+    resource_to_telemetry_conversion:
+        enabled: true
+
+  # Traces -> Tempo
+  otlp/tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+
+  # Logs -> Loki
+  otlp/loki:
+    endpoint: "loki:3100"
+    tls:
+      insecure: true
+
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, tail_sampling] # Removed 'transform' as it's done in Agent
+      exporters: [otlp/tempo, debug]
+    
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/loki, debug]

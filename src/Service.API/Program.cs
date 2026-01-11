@@ -41,9 +41,9 @@ builder.Services.AddOpenTelemetry()
         tracing.SetResourceBuilder(resourceBuilder)
                .AddAspNetCoreInstrumentation() // Auto-instrument incoming HTTP requests
                .AddHttpClientInstrumentation() // Auto-instrument outgoing HTTP client calls
-                                               // SRE TIP: Use ParentBasedSampler to ensure we don't break traces started by upstream services.
-                                               // TraceIdRatioBasedSampler(0.1) = 10% sampling rate.
-               .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.1)))
+                                               // SRE UPDATE: Removed Head Sampling (was 10%). 
+                                               // We now send 100% of traces to the Agent. 
+                                               // The 'otel-gateway' performs Tail-Based Sampling to decide retention.
                .AddOtlpExporter(); // Exports traces to Collector (then to Tempo)
     })
     .WithMetrics(metrics =>

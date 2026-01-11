@@ -2,18 +2,33 @@ version: '3.8'
 
 services:
   # ---------------------------------------------------------------------------
-  # OTEL Collector - The Brain
+  # 1. OTEL Agent (DaemonSet Sim)
   # ---------------------------------------------------------------------------
-  otel-collector:
+  otel-agent:
     image: otel/opentelemetry-collector-contrib:0.96.0
-    container_name: otel-collector
-    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    container_name: otel-agent
+    command: [ "--config=/etc/otelcol-contrib/config.yaml" ]
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./otel-agent-config.yaml:/etc/otelcol-contrib/config.yaml
     ports:
-      - "4317:4317" # OTLP gRPC
+      - "4317:4317" # OTLP gRPC (Accepts data from Host Apps)
       - "4318:4318" # OTLP HTTP
-      - "8888:8888" # Metrics
+    depends_on:
+      - otel-gateway
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # 2. OTEL Gateway (Deployment Sim)
+  # ---------------------------------------------------------------------------
+  otel-gateway:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    container_name: otel-gateway
+    command: [ "--config=/etc/otelcol-contrib/config.yaml" ]
+    volumes:
+      - ./otel-gateway-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "8888:8888" # Gateway Metrics
       - "8889:8889" # Prometheus Exporter
     depends_on:
       - tempo
@@ -71,19 +86,59 @@ services:
   # ---------------------------------------------------------------------------
   # Visualization (Grafana)
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # 3. NGINX Reverse Proxy (TLS Termination)
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/certs:/etc/nginx/certs
+    depends_on:
+      - grafana
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Visualization (Grafana)
+  # ---------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:10.4.0
     container_name: grafana
     environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      # Security Hardening
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false # Must be false to allow Admin login
+
+      # SSO Preparation (Generic OAuth - Ready to Enable)
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=false
+      - GF_AUTH_GENERIC_OAUTH_NAME=Corporate SSO
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=your_client_id
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=your_client_secret
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://idp.example.com/oauth2/authorize
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://idp.example.com/oauth2/token
+      - GF_AUTH_GENERIC_OAUTH_API_URL=https://idp.example.com/oauth2/userinfo
+
+      # Server Configuration (ensure links are generated with https)
+      - GF_SERVER_ROOT_URL=https://localhost
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_ENFORCE_DOMAIN=true
+
       - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
-    ports:
-      - "3000:3000"
+    # Ports removed! Only accessible via NGINX (Ingress Simulation)
+    # ports:
+    #   - "3000:3000"
     depends_on:
       - prometheus
       - tempo

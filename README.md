@@ -19,8 +19,8 @@ The system follows a sidecar/agentless model where services push OTLP (OpenTelem
 ```mermaid
 graph TD
     subgraph "Application Layer (.NET 8)"
-        API[Service.API (Web API)] -->|OTLP gRPC| Col[OTel Collector]
-        Worker[Service.Worker (Background)] -->|OTLP gRPC| Col
+        API["Service.API (Web API)"] -->|OTLP gRPC| Col["OTel Collector"]
+        Worker["Service.Worker (Background)"] -->|OTLP gRPC| Col
     end
 
     subgraph "Observability Pipeline"

@@ -4,6 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.1.0-alpha</Version>
     <UserSecretsId>dotnet-Service.Worker-6c9c4df8-996d-4de4-a41a-208c091f2496</UserSecretsId>
   </PropertyGroup>
 
